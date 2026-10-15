@@ -1,7 +1,9 @@
 import { Image } from 'expo-image';
 import { View } from 'react-native';
 
+import { useAuth } from '@/lib/auth';
 import { posterColor } from '@/lib/library';
+import { posterSource } from '@/lib/posters';
 
 const SIZES = {
   sm: { width: 56, height: 80, borderRadius: 6 },
@@ -18,6 +20,7 @@ export function Poster({
   url?: string | null;
   size?: keyof typeof SIZES;
 }) {
+  const { session } = useAuth();
   const box = SIZES[size];
   return (
     <View
@@ -28,7 +31,7 @@ export function Poster({
       ]}>
       {url ? (
         <Image
-          source={{ uri: url }}
+          source={posterSource(url, session?.access_token)}
           style={{ width: box.width, height: box.height }}
           contentFit="cover"
           transition={150}

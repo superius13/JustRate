@@ -4,6 +4,7 @@
 // POST { action: "search_movies", query }  → { results: CatalogItem[] }
 // POST { action: "movie_details", id }     → { creator, description, poster_url }
 // POST { action: "search_books", query }   → { results: CatalogItem[] }
+// GET  ?poster=<image url>                  → the image itself, for hosts blocked in Russia (TMDB)
 //
 // Secrets: POISKKINO_API_KEY (required for films), GOOGLE_BOOKS_API_KEY (optional; without it
 // Google's shared anonymous quota often runs out).
@@ -11,11 +12,34 @@
 const POISKKINO_URL = 'https://api.poiskkino.dev/v1.5';
 const GOOGLE_BOOKS_URL = 'https://www.googleapis.com/books/v1/volumes';
 const SEARCH_LIMIT = 15;
+// PoiskKino takes some posters from TMDB, which is unreachable from Russia; those are relayed.
+const RELAYED_IMAGE_HOSTS = ['image.tmdb.org'];
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+async function relayPoster(raw: string) {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return fail('bad_request');
+  }
+  if (url.protocol !== 'https:' || !RELAYED_IMAGE_HOSTS.includes(url.hostname)) return fail('bad_request');
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch {
+    return fail('upstream');
+  }
+  const type = response.headers.get('content-type') ?? '';
+  if (!response.ok || !type.startsWith('image/')) return fail('upstream');
+  return new Response(response.body, {
+    headers: { ...corsHeaders, 'Content-Type': type, 'Cache-Control': 'public, max-age=2592000, immutable' },
+  });
+}
 
 type Kind = 'movie' | 'series' | 'cartoon' | 'book';
 
@@ -155,6 +179,10 @@ async function searchBooks(query: string) {
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (req.method === 'GET') {
+    const poster = new URL(req.url).searchParams.get('poster');
+    return poster ? relayPoster(poster) : fail('bad_request');
+  }
 
   const body = await req.json().catch(() => ({}));
   const query = typeof body?.query === 'string' ? body.query.trim().slice(0, 100) : '';

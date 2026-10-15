@@ -23,8 +23,21 @@ npx tsc --noEmit   # проверка типов
 
 ## Структура
 
-- `src/app/` — экраны (каждый файл = маршрут Expo Router)
-- `src/components/`, `src/hooks/`, `src/constants/` — общий код
-- `assets/` — иконки, шрифты, картинки
+- `src/app/` — экраны (каждый файл = маршрут Expo Router). Пока: вход (`sign-in`), ввод имени (`profile-setup`), главный (`index`).
+- `src/components/ui/` — компоненты gluestack-ui (кнопки, поля, текст). Создаются командой `npx gluestack-ui@3 add <имя>`, руками не правим.
+- `src/components/` — свои общие компоненты.
+- `src/lib/` — работа с базой (`supabase.ts`), вход и профиль (`auth.tsx`).
+- `supabase/migrations/` — структура базы данных. Каждый файл выполняется один раз в Supabase, по порядку.
+- `assets/` — иконки и картинки.
+
+Стиль: светлая тема «Книжная полка». Шрифты Lora (заголовки) и Golos Text (текст), основной цвет `#0F6B5C`.
+Цвета задаются в `src/components/ui/gluestack-ui-provider/config.ts`, шрифты в `tailwind.config.js`.
+
+## База данных (Supabase)
+
+1. Создать проект на [supabase.com](https://supabase.com).
+2. **SQL Editor → New query**: вставить `supabase/migrations/0001_init.sql`, нажать **Run**.
+3. **Authentication → Sign In / Providers → Email**: выключить **Confirm email**.
+4. Скопировать `.env.example` в `.env` и вписать адрес проекта и publishable key из **Project Settings → API Keys**.
 
 Сборка iOS идёт в облаке через EAS Build и TestFlight, Mac не нужен.

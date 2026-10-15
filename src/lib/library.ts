@@ -22,7 +22,7 @@ export function isTitleKind(value: unknown): value is TitleKind {
   return value === 'movie' || value === 'series' || value === 'cartoon' || value === 'book';
 }
 
-export type TitleSource = 'kinopoisk' | 'google_books' | 'open_library' | 'manual';
+export type TitleSource = 'kinopoisk' | 'google_books' | 'fantlab' | 'manual';
 
 export type Title = {
   id: string;
@@ -108,6 +108,37 @@ export async function findCatalogTitle(source: TitleSource, externalId: string):
     .maybeSingle();
   if (error) throw error;
   return data as Title | null;
+}
+
+/** Lower-case words of a search, with ё read as е. */
+export function searchWords(value: string): string[] {
+  return value
+    .toLocaleLowerCase('ru')
+    .replace(/ё/g, 'е')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+}
+
+export type SavedTitle = Title & { source: TitleSource; external_id: string | null };
+
+/** Titles anyone in JustRate has already saved whose name, original name or author holds every word. */
+export async function searchSavedTitles(kind: TitleKind, query: string, limit = 5): Promise<SavedTitle[]> {
+  const queryWords = searchWords(query).slice(0, 5);
+  if (queryWords.length === 0) return [];
+  // "_" matches any one letter, so е also finds ё. Words hold only letters and digits, which are safe here.
+  const clauses = queryWords.map((word) => {
+    const pattern = `*${word.replace(/е/g, '_')}*`;
+    return `or(name.ilike.${pattern},original_name.ilike.${pattern},creator.ilike.${pattern})`;
+  });
+  const { data, error } = await supabase
+    .from('titles')
+    .select(`${TITLE_COLUMNS}, source, external_id`)
+    .eq('kind', kind)
+    .or(`and(${clauses.join(',')})`)
+    .order('name')
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as SavedTitle[];
 }
 
 export type RatingInput = {

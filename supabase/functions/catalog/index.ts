@@ -1,11 +1,11 @@
 // JustRate catalog search, run as a Supabase Edge Function so API keys stay in Supabase secrets.
-// Films, series and cartoons come from PoiskKino (formerly kinopoisk.dev), books from Google Books,
-// with Open Library as a fallback when Google is down.
+// Films, series and cartoons come from PoiskKino (formerly kinopoisk.dev), books from Google Books
+// (editions of one book merged). Fantlab, the Russian book catalog, only answers Russian addresses,
+// so the app asks it directly (src/lib/fantlab.ts).
 //
 // POST { action: "search_movies", query }  → { results: CatalogItem[] }
 // POST { action: "movie_details", id }     → { creator, description, poster_url }
-// POST { action: "search_books", query }   → { results: CatalogItem[], fallback? }
-//   fallback is "open_library" when Google Books was down and the results came from Open Library.
+// POST { action: "search_books", query }   → { results: CatalogItem[] }
 // GET  ?poster=<image url>                  → the image itself, for hosts blocked in Russia (TMDB)
 //
 // Secrets: POISKKINO_API_KEY (required for films), GOOGLE_BOOKS_API_KEY (optional; without it
@@ -13,7 +13,6 @@
 
 const POISKKINO_URL = 'https://api.poiskkino.dev/v1.5';
 const GOOGLE_BOOKS_URL = 'https://www.googleapis.com/books/v1/volumes';
-const OPEN_LIBRARY_URL = 'https://openlibrary.org/search.json';
 const SEARCH_LIMIT = 15;
 // PoiskKino takes some posters from TMDB, which is unreachable from Russia; those are relayed.
 const RELAYED_IMAGE_HOSTS = ['image.tmdb.org'];
@@ -47,7 +46,7 @@ async function relayPoster(raw: string) {
 type Kind = 'movie' | 'series' | 'cartoon' | 'book';
 
 type CatalogItem = {
-  source: 'kinopoisk' | 'google_books' | 'open_library';
+  source: 'kinopoisk' | 'google_books';
   external_id: string;
   kind: Kind;
   name: string;
@@ -86,10 +85,13 @@ function validYear(value: unknown): number | null {
 
 type Upstream = { data: Json } | { error: CatalogError; detail: string };
 
-async function getJson(url: string, headers: Record<string, string>): Promise<Upstream> {
+async function getJson(url: string, headers: Record<string, string>, timeoutMs?: number): Promise<Upstream> {
   let response: Response;
   try {
-    response = await fetch(url, { headers: { Accept: 'application/json', ...headers } });
+    response = await fetch(url, {
+      headers: { Accept: 'application/json', ...headers },
+      signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
+    });
   } catch (e) {
     return { error: 'upstream', detail: `network: ${e instanceof Error ? e.message : String(e)}`.slice(0, 200) };
   }
@@ -171,7 +173,24 @@ async function movieDetails(id: number) {
 
 // --- Books ---
 
-function toBook(item: Json): CatalogItem | null {
+// Google may not hold up the answer for longer than this, retries included.
+const BOOK_SEARCH_BUDGET_MS = 2500;
+
+function words(value: string): string[] {
+  return value
+    .toLocaleLowerCase('ru')
+    .replace(/ё/g, 'е')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+}
+
+/** The same book in different editions: its title plus the first author's surname. */
+function bookKey(book: CatalogItem): string {
+  const firstAuthor = (book.creator ?? '').split(',')[0];
+  return `${words(book.name).join(' ')}|${words(firstAuthor).at(-1) ?? ''}`;
+}
+
+function toGoogleBook(item: Json): CatalogItem | null {
   const info = item?.volumeInfo;
   const name = text(info?.title);
   if (typeof item?.id !== 'string' || !name) return null;
@@ -200,21 +219,17 @@ async function searchGoogleBooks(query: string): Promise<Upstream> {
   const key = Deno.env.get('GOOGLE_BOOKS_API_KEY');
   if (key) params.set('key', key);
   const url = `${GOOGLE_BOOKS_URL}?${params}`;
-  let result = await getJson(url, {});
+  const deadline = Date.now() + BOOK_SEARCH_BUDGET_MS;
+  let result = await getJson(url, {}, BOOK_SEARCH_BUDGET_MS);
   for (const delay of GOOGLE_RETRY_DELAYS_MS) {
     if (!('error' in result) || result.error !== 'upstream') break;
+    // Skip a retry that could not finish in time.
+    const left = deadline - Date.now() - delay;
+    if (left < 300) break;
     await new Promise((resolve) => setTimeout(resolve, delay));
-    result = await getJson(url, {});
+    result = await getJson(url, {}, left);
   }
   return result;
-}
-
-function words(value: string): string[] {
-  return value
-    .toLocaleLowerCase('ru')
-    .replace(/ё/g, 'е')
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter(Boolean);
 }
 
 /** Higher for books whose title (or author) holds what was typed, with a cover, and often rated. */
@@ -240,61 +255,39 @@ function bookScore(queryWords: string[], book: CatalogItem, ratingsCount: number
   return score;
 }
 
-function rankBooks(query: string, items: Json[]): CatalogItem[] {
+/** Google lists every edition; keep one row per book, sorted by how well it matches. */
+function rankGoogleBooks(query: string, items: Json[]): CatalogItem[] {
   const queryWords = words(query);
-  return items
-    .map((item, index) => {
-      const book = toBook(item);
-      const ratings = Number(item?.volumeInfo?.ratingsCount);
-      const score = book ? bookScore(queryWords, book, Number.isFinite(ratings) ? ratings : 0) : 0;
-      return { book, score, index };
-    })
-    .filter((entry): entry is { book: CatalogItem; score: number; index: number } => entry.book !== null)
+  type Group = { book: CatalogItem; score: number; index: number; ratings: number };
+  const groups = new Map<string, Group>();
+  items.forEach((item, index) => {
+    const book = toGoogleBook(item);
+    if (!book) return;
+    const count = Number(item?.volumeInfo?.ratingsCount);
+    const ratings = Number.isFinite(count) ? count : 0;
+    const key = bookKey(book);
+    const group = groups.get(key);
+    if (!group) {
+      groups.set(key, { book, score: 0, index, ratings });
+      return;
+    }
+    // The earliest year found is the closest to when the book was written.
+    const year = group.book.year && book.year ? Math.min(group.book.year, book.year) : (group.book.year ?? book.year);
+    group.book = { ...group.book, year, poster_url: group.book.poster_url ?? book.poster_url };
+    group.ratings += ratings;
+  });
+  return [...groups.values()]
+    .map((group) => ({ ...group, score: bookScore(queryWords, group.book, group.ratings) }))
     // Equal scores keep Google's own order.
     .sort((a, b) => b.score - a.score || a.index - b.index)
-    .slice(0, SEARCH_LIMIT)
-    .map((entry) => entry.book);
-}
-
-function toOpenLibraryBook(doc: Json): CatalogItem | null {
-  const name = text(doc?.title);
-  const key = text(doc?.key);
-  if (!name || !key) return null;
-  const authors: string[] = Array.isArray(doc.author_name) ? doc.author_name.filter((a: unknown) => text(a)) : [];
-  return {
-    source: 'open_library',
-    external_id: key.replace(/^\/works\//, ''),
-    kind: 'book',
-    name,
-    original_name: null,
-    year: validYear(doc.first_publish_year),
-    creator: authors.length > 0 ? authors.slice(0, 3).join(', ').slice(0, 200) : null,
-    poster_url: typeof doc.cover_i === 'number' ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg` : null,
-  };
-}
-
-async function searchOpenLibrary(query: string): Promise<Upstream> {
-  const params = new URLSearchParams({
-    q: query,
-    limit: String(SEARCH_LIMIT),
-    fields: 'key,title,author_name,first_publish_year,cover_i',
-  });
-  return getJson(`${OPEN_LIBRARY_URL}?${params}`, { 'User-Agent': 'JustRate (personal book list)' });
+    .map((group) => group.book);
 }
 
 async function searchBooks(query: string) {
   const google = await searchGoogleBooks(query);
-  if (!('error' in google)) {
-    const items: Json[] = Array.isArray(google.data?.items) ? google.data.items : [];
-    return json({ results: rankBooks(query, items) });
-  }
-  // A wrong key needs fixing, so say so; outages and quota fall back to Open Library.
-  if (google.error === 'bad_key') return fail(google.error, google.detail);
-  console.error(`catalog: google books ${google.error}: ${google.detail}; using Open Library`);
-  const openLibrary = await searchOpenLibrary(query);
-  if ('error' in openLibrary) return fail(google.error, google.detail);
-  const docs: Json[] = Array.isArray(openLibrary.data?.docs) ? openLibrary.data.docs : [];
-  return json({ results: docs.map(toOpenLibraryBook).filter(Boolean), fallback: 'open_library' });
+  if ('error' in google) return fail(google.error, google.detail);
+  const items: Json[] = Array.isArray(google.data?.items) ? google.data.items : [];
+  return json({ results: rankGoogleBooks(query, items).slice(0, SEARCH_LIMIT) });
 }
 
 Deno.serve(async (req) => {

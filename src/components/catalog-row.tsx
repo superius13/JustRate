@@ -28,7 +28,7 @@ export function CatalogRow({
       accessibilityRole="button"
       accessibilityLabel={`${item.name}, ${meta}`}
       className="flex-row items-center gap-3.5 border-b border-outline-100 py-3 active:opacity-70">
-      <Poster id={`${item.source}:${item.external_id}`} url={item.poster_url} />
+      <Poster id={item.title?.id ?? `${item.source}:${item.external_id}`} url={item.poster_url} />
       <View className="min-w-0 flex-1 gap-1">
         <Text className="font-heading-semibold text-[17px] leading-[22px] text-typography-900" numberOfLines={2}>
           {item.name}

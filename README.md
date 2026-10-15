@@ -36,13 +36,15 @@ npx tsc --noEmit   # проверка типов
 ## База данных (Supabase)
 
 1. Создать проект на [supabase.com](https://supabase.com).
-2. **SQL Editor → New query**: по очереди вставить каждый файл из `supabase/migrations/` (`0001_init.sql`, `0002_creator.sql`, `0003_half_point_overall.sql`, `0004_open_library.sql`, …) и нажать **Run**.
+2. **SQL Editor → New query**: по очереди вставить каждый файл из `supabase/migrations/` (`0001_init.sql`, `0002_creator.sql`, `0003_half_point_overall.sql`, `0004_fantlab.sql`, …) и нажать **Run**.
 3. **Authentication → Sign In / Providers → Email**: выключить **Confirm email**.
 4. Вписать в `.env` адрес проекта и publishable key из **Project Settings → API Keys**.
 
 ### Поиск по каталогу
 
 Поиск фильмов и книг идёт через функцию `supabase/functions/catalog`, чтобы ключи не попадали в приложение.
+
+Книги ищутся сразу в трёх местах: среди уже добавленных в JustRate, в Фантлабе (приложение обращается к нему напрямую, ключ не нужен; он отвечает только российским адресам) и в Google Книгах через ту же функцию.
 
 1. Получить ключ ПоискКино (бывший kinopoisk.dev) у Telegram-бота [@poiskkinodev_bot](https://t.me/poiskkinodev_bot).
 2. **Edge Functions → Secrets**: добавить `POISKKINO_API_KEY`. По желанию `GOOGLE_BOOKS_API_KEY`: без него общий бесплатный лимит Google Books часто заканчивается.

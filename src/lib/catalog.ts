@@ -1,11 +1,23 @@
 import { FunctionsFetchError, FunctionsHttpError, FunctionsRelayError } from '@supabase/supabase-js';
 
-import { createTitle, findCatalogTitle, type Title, type TitleKind } from '@/lib/library';
+import { searchFantlab } from '@/lib/fantlab';
+import {
+  createTitle,
+  findCatalogTitle,
+  searchSavedTitles,
+  searchWords,
+  type SavedTitle,
+  type Title,
+  type TitleKind,
+} from '@/lib/library';
 import { supabase } from '@/lib/supabase';
 
-/** Search results from the `catalog` Edge Function (supabase/functions/catalog). */
+/**
+ * A search result: from the `catalog` Edge Function (supabase/functions/catalog), or a title
+ * someone in JustRate already saved (`saved`, with the title attached).
+ */
 export type CatalogItem = {
-  source: 'kinopoisk' | 'google_books' | 'open_library';
+  source: 'kinopoisk' | 'google_books' | 'fantlab' | 'saved';
   external_id: string;
   kind: TitleKind;
   name: string;
@@ -13,6 +25,7 @@ export type CatalogItem = {
   year: number | null;
   creator: string | null;
   poster_url: string | null;
+  title?: Title;
 };
 
 export type CatalogShelf = 'video' | 'book';
@@ -61,27 +74,78 @@ async function invoke<T>(body: Record<string, unknown>): Promise<T> {
   throw new CatalogError('failed');
 }
 
-export type CatalogSearch = {
-  results: CatalogItem[];
-  /** The books came from Open Library because Google Books was down. */
-  fromFallback: boolean;
-};
+const cache = new Map<string, CatalogItem[]>();
 
-const cache = new Map<string, CatalogSearch>();
+async function cached(key: string, load: () => Promise<CatalogItem[]>): Promise<CatalogItem[]> {
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const list = await load();
+  cache.set(key, list);
+  return list;
+}
 
-/** Films, series and cartoons from PoiskKino, or books from Google Books (Open Library as a fallback). */
-export async function searchCatalog(shelf: CatalogShelf, query: string): Promise<CatalogSearch> {
-  const trimmed = query.trim();
-  const key = `${shelf}:${trimmed.toLocaleLowerCase('ru')}`;
-  const cached = cache.get(key);
-  if (cached) return cached;
-  const { results, fallback } = await invoke<{ results: CatalogItem[]; fallback?: string }>({
+async function searchServer(shelf: CatalogShelf, query: string): Promise<CatalogItem[]> {
+  const { results } = await invoke<{ results: CatalogItem[] }>({
     action: shelf === 'book' ? 'search_books' : 'search_movies',
-    query: trimmed,
+    query,
   });
-  const search = { results: Array.isArray(results) ? results : [], fromFallback: Boolean(fallback) };
-  cache.set(key, search);
-  return search;
+  return Array.isArray(results) ? results : [];
+}
+
+/** The same book from different places: its title plus the first author's surname. */
+function bookKey(item: { name: string; creator: string | null }): string {
+  const firstAuthor = (item.creator ?? '').split(',')[0];
+  return `${searchWords(item.name).join(' ')}|${searchWords(firstAuthor).at(-1) ?? ''}`;
+}
+
+function savedItem(title: SavedTitle): CatalogItem {
+  const { source, external_id, ...rest } = title;
+  return {
+    source: 'saved',
+    external_id: title.id,
+    kind: title.kind,
+    name: title.name,
+    original_name: title.original_name,
+    year: title.year,
+    creator: title.creator,
+    poster_url: title.poster_url,
+    title: rest,
+  };
+}
+
+/**
+ * Films, series and cartoons from PoiskKino. Books: first those already saved in JustRate,
+ * then Fantlab, then Google Books, each book once. All three are asked at the same time.
+ */
+export async function searchCatalog(shelf: CatalogShelf, query: string): Promise<CatalogItem[]> {
+  const trimmed = query.trim();
+  const key = trimmed.toLocaleLowerCase('ru');
+  if (shelf === 'video') return cached(`video:${key}`, () => searchServer('video', trimmed));
+
+  // Saved books are read fresh every time, so a book added a minute ago is found.
+  const [saved, fantlab, google] = await Promise.allSettled([
+    searchSavedTitles('book', trimmed),
+    cached(`fantlab:${key}`, () => searchFantlab(trimmed)),
+    cached(`book:${key}`, () => searchServer('book', trimmed)),
+  ]);
+  const savedTitles = saved.status === 'fulfilled' ? saved.value : [];
+  const found = [
+    ...(fantlab.status === 'fulfilled' ? fantlab.value : []),
+    ...(google.status === 'fulfilled' ? google.value : []),
+  ];
+  // Without any catalog answer, an empty list would wrongly read as "nothing found".
+  if (savedTitles.length === 0 && found.length === 0 && google.status === 'rejected') throw google.reason;
+
+  const results = savedTitles.map(savedItem);
+  const seenIds = new Set(savedTitles.map((title) => `${title.source}:${title.external_id}`));
+  const seenKeys = new Set(savedTitles.map(bookKey));
+  for (const item of found) {
+    const itemKey = bookKey(item);
+    if (seenIds.has(`${item.source}:${item.external_id}`) || seenKeys.has(itemKey)) continue;
+    seenKeys.add(itemKey);
+    results.push(item);
+  }
+  return results;
 }
 
 /**
@@ -89,6 +153,8 @@ export async function searchCatalog(shelf: CatalogShelf, query: string): Promise
  * so friends who pick the same film share one title.
  */
 export async function ensureCatalogTitle(item: CatalogItem): Promise<Title> {
+  if (item.title) return item.title;
+  if (item.source === 'saved') throw new CatalogError('failed');
   const existing = await findCatalogTitle(item.source, item.external_id);
   if (existing) return existing;
 

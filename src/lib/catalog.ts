@@ -61,21 +61,27 @@ async function invoke<T>(body: Record<string, unknown>): Promise<T> {
   throw new CatalogError('failed');
 }
 
-const cache = new Map<string, CatalogItem[]>();
+export type CatalogSearch = {
+  results: CatalogItem[];
+  /** The books came from Open Library because Google Books was down. */
+  fromFallback: boolean;
+};
 
-/** Films, series and cartoons from PoiskKino, or books from Google Books. */
-export async function searchCatalog(shelf: CatalogShelf, query: string): Promise<CatalogItem[]> {
+const cache = new Map<string, CatalogSearch>();
+
+/** Films, series and cartoons from PoiskKino, or books from Google Books (Open Library as a fallback). */
+export async function searchCatalog(shelf: CatalogShelf, query: string): Promise<CatalogSearch> {
   const trimmed = query.trim();
   const key = `${shelf}:${trimmed.toLocaleLowerCase('ru')}`;
   const cached = cache.get(key);
   if (cached) return cached;
-  const { results } = await invoke<{ results: CatalogItem[] }>({
+  const { results, fallback } = await invoke<{ results: CatalogItem[]; fallback?: string }>({
     action: shelf === 'book' ? 'search_books' : 'search_movies',
     query: trimmed,
   });
-  const list = Array.isArray(results) ? results : [];
-  cache.set(key, list);
-  return list;
+  const search = { results: Array.isArray(results) ? results : [], fromFallback: Boolean(fallback) };
+  cache.set(key, search);
+  return search;
 }
 
 /**

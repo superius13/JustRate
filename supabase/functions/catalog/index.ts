@@ -4,7 +4,8 @@
 //
 // POST { action: "search_movies", query }  → { results: CatalogItem[] }
 // POST { action: "movie_details", id }     → { creator, description, poster_url }
-// POST { action: "search_books", query }   → { results: CatalogItem[] }
+// POST { action: "search_books", query }   → { results: CatalogItem[], fallback? }
+//   fallback is "open_library" when Google Books was down and the results came from Open Library.
 // GET  ?poster=<image url>                  → the image itself, for hosts blocked in Russia (TMDB)
 //
 // Secrets: POISKKINO_API_KEY (required for films), GOOGLE_BOOKS_API_KEY (optional; without it
@@ -238,7 +239,7 @@ async function searchBooks(query: string) {
   const openLibrary = await searchOpenLibrary(query);
   if ('error' in openLibrary) return fail(google.error, google.detail);
   const docs: Json[] = Array.isArray(openLibrary.data?.docs) ? openLibrary.data.docs : [];
-  return json({ results: docs.map(toOpenLibraryBook).filter(Boolean) });
+  return json({ results: docs.map(toOpenLibraryBook).filter(Boolean), fallback: 'open_library' });
 }
 
 Deno.serve(async (req) => {

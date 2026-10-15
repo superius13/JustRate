@@ -18,6 +18,7 @@ import {
   ensureCatalogTitle,
   searchCatalog,
   type CatalogItem,
+  type CatalogSearch,
   type CatalogShelf,
 } from '@/lib/catalog';
 
@@ -33,11 +34,11 @@ const SEARCH_DELAY_MS = 600;
 type SearchState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'done'; results: CatalogItem[] }
+  | ({ status: 'done' } & CatalogSearch)
   | { status: 'error'; message: string };
 
 /** The latest answer from the catalog and the search it answers. */
-type Answer = { key: string } & ({ results: CatalogItem[] } | { message: string });
+type Answer = { key: string } & ({ search: CatalogSearch } | { message: string });
 
 export default function AddTitleScreen() {
   const [shelf, setShelf] = useState<CatalogShelf>('video');
@@ -54,7 +55,7 @@ export default function AddTitleScreen() {
     let active = true;
     const timer = setTimeout(() => {
       searchCatalog(shelf, trimmed)
-        .then((results) => active && setAnswer({ key: searchKey, results }))
+        .then((search) => active && setAnswer({ key: searchKey, search }))
         .catch((e) => active && setAnswer({ key: searchKey, message: describeCatalogError(e) }));
     }, SEARCH_DELAY_MS);
     return () => {
@@ -68,8 +69,8 @@ export default function AddTitleScreen() {
       ? { status: 'idle' }
       : answer?.key !== searchKey
         ? { status: 'loading' }
-        : 'results' in answer
-          ? { status: 'done', results: answer.results }
+        : 'search' in answer
+          ? { status: 'done', ...answer.search }
           : { status: 'error', message: answer.message };
 
   async function pick(item: CatalogItem) {
@@ -156,23 +157,37 @@ function SearchResults({
   if (state.status === 'error') {
     return <Text className="text-typography-700">{state.message}</Text>;
   }
+  // Shown when Google Books was down, so a thinner list of books does not look like a bug.
+  const fallbackNote = state.fromFallback ? (
+    <Text className="text-[13px] text-typography-600">
+      Google Книги сейчас недоступны, показаны книги из Open Library. Русских изданий там меньше.
+    </Text>
+  ) : null;
   if (state.results.length === 0) {
-    return <Text className="text-typography-700">Ничего не нашлось. Попробуй другое написание.</Text>;
+    return (
+      <View className="gap-2">
+        {fallbackNote}
+        <Text className="text-typography-700">Ничего не нашлось. Попробуй другое написание.</Text>
+      </View>
+    );
   }
   return (
-    <View>
-      {state.results.map((item) => {
-        const key = `${item.source}:${item.external_id}`;
-        return (
-          <CatalogRow
-            key={key}
-            item={item}
-            busy={picking === key}
-            disabled={picking !== null}
-            onPress={() => onPick(item)}
-          />
-        );
-      })}
+    <View className="gap-2">
+      {fallbackNote}
+      <View>
+        {state.results.map((item) => {
+          const key = `${item.source}:${item.external_id}`;
+          return (
+            <CatalogRow
+              key={key}
+              item={item}
+              busy={picking === key}
+              disabled={picking !== null}
+              onPress={() => onPick(item)}
+            />
+          );
+        })}
+      </View>
     </View>
   );
 }

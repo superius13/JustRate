@@ -7,9 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "justrate",
     "userInterfaceStyle": "automatic",
-    "ios": {
-      "icon": "./assets/images/icon.png"
-    },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",

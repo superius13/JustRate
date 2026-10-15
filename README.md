@@ -38,6 +38,6 @@ npx tsc --noEmit   # проверка типов
 1. Создать проект на [supabase.com](https://supabase.com).
 2. **SQL Editor → New query**: вставить `supabase/migrations/0001_init.sql`, нажать **Run**.
 3. **Authentication → Sign In / Providers → Email**: выключить **Confirm email**.
-4. Скопировать `.env.example` в `.env` и вписать адрес проекта и publishable key из **Project Settings → API Keys**.
+4. Вписать в `.env` адрес проекта и publishable key из **Project Settings → API Keys**.
 
 Сборка iOS идёт в облаке через EAS Build и TestFlight, Mac не нужен.

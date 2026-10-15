@@ -170,3 +170,13 @@ create policy "ratings: update own" on public.ratings
   for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "ratings: delete own" on public.ratings
   for delete to authenticated using (user_id = auth.uid());
+
+-- API access. New Supabase projects no longer expose public tables automatically,
+-- so grant exactly what the policies above allow. Anonymous visitors get nothing.
+grant select, insert, update on public.profiles to authenticated;
+grant select, update on public.groups to authenticated;
+grant select, delete on public.group_members to authenticated;
+grant select, insert on public.titles to authenticated;
+grant select, insert, update, delete on public.ratings to authenticated;
+grant execute on function public.is_group_member(uuid) to authenticated;
+grant execute on function public.shares_group_with(uuid) to authenticated;

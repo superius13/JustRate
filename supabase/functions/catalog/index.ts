@@ -190,15 +190,70 @@ function toBook(item: Json): CatalogItem | null {
   };
 }
 
+// Google matches the words anywhere in a book, so take more books than we show and sort them.
+const GOOGLE_BOOKS_FETCH = 40;
+// Google Books often answers 503 "backendFailed" for a moment; a retry after a short pause usually gets through.
+const GOOGLE_RETRY_DELAYS_MS = [400, 800];
+
 async function searchGoogleBooks(query: string): Promise<Upstream> {
-  const params = new URLSearchParams({ q: query, maxResults: String(SEARCH_LIMIT), printType: 'books' });
+  const params = new URLSearchParams({ q: query, maxResults: String(GOOGLE_BOOKS_FETCH), printType: 'books' });
   const key = Deno.env.get('GOOGLE_BOOKS_API_KEY');
   if (key) params.set('key', key);
   const url = `${GOOGLE_BOOKS_URL}?${params}`;
-  const first = await getJson(url, {});
-  // Google Books often answers 503 "backendFailed" for a moment; one retry usually gets through.
-  if ('error' in first && first.error === 'upstream') return getJson(url, {});
-  return first;
+  let result = await getJson(url, {});
+  for (const delay of GOOGLE_RETRY_DELAYS_MS) {
+    if (!('error' in result) || result.error !== 'upstream') break;
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    result = await getJson(url, {});
+  }
+  return result;
+}
+
+function words(value: string): string[] {
+  return value
+    .toLocaleLowerCase('ru')
+    .replace(/ё/g, 'е')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+}
+
+/** Higher for books whose title (or author) holds what was typed, with a cover, and often rated. */
+function bookScore(queryWords: string[], book: CatalogItem, ratingsCount: number): number {
+  const title = words(book.name);
+  const authors = words(book.creator ?? '');
+  const titleText = title.join(' ');
+  const queryText = queryWords.join(' ');
+  let score = 0;
+  if (titleText === queryText) score += 100;
+  else if (titleText.startsWith(queryText)) score += 60;
+  let matched = 0;
+  for (const word of queryWords) {
+    const inTitle = title.some((t) => t.startsWith(word));
+    const inAuthor = !inTitle && authors.some((a) => a.startsWith(word));
+    if (inTitle) score += 20;
+    if (inAuthor) score += 15;
+    if (inTitle || inAuthor) matched += 1;
+  }
+  if (matched === queryWords.length) score += 30;
+  if (book.poster_url) score += 15;
+  score += Math.min(Math.log10(ratingsCount + 1) * 5, 15);
+  return score;
+}
+
+function rankBooks(query: string, items: Json[]): CatalogItem[] {
+  const queryWords = words(query);
+  return items
+    .map((item, index) => {
+      const book = toBook(item);
+      const ratings = Number(item?.volumeInfo?.ratingsCount);
+      const score = book ? bookScore(queryWords, book, Number.isFinite(ratings) ? ratings : 0) : 0;
+      return { book, score, index };
+    })
+    .filter((entry): entry is { book: CatalogItem; score: number; index: number } => entry.book !== null)
+    // Equal scores keep Google's own order.
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, SEARCH_LIMIT)
+    .map((entry) => entry.book);
 }
 
 function toOpenLibraryBook(doc: Json): CatalogItem | null {
@@ -231,7 +286,7 @@ async function searchBooks(query: string) {
   const google = await searchGoogleBooks(query);
   if (!('error' in google)) {
     const items: Json[] = Array.isArray(google.data?.items) ? google.data.items : [];
-    return json({ results: items.map(toBook).filter(Boolean) });
+    return json({ results: rankBooks(query, items) });
   }
   // A wrong key needs fixing, so say so; outages and quota fall back to Open Library.
   if (google.error === 'bad_key') return fail(google.error, google.detail);

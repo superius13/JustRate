@@ -22,15 +22,20 @@ export function isTitleKind(value: unknown): value is TitleKind {
   return value === 'movie' || value === 'series' || value === 'cartoon' || value === 'book';
 }
 
+export type TitleSource = 'kinopoisk' | 'google_books' | 'fantlab' | 'manual';
+
 export type Title = {
   id: string;
   kind: TitleKind;
   name: string;
+  original_name: string | null;
   year: number | null;
   creator: string | null;
+  poster_url: string | null;
 };
 
-export type TitleDraft = Omit<Title, 'id'>;
+/** A title typed in by hand on the add screen. */
+export type TitleDraft = Pick<Title, 'kind' | 'name' | 'year' | 'creator'>;
 
 export type Rating = {
   id: string;
@@ -46,7 +51,7 @@ export type Rating = {
 
 export type ShelfItem = Rating & { title: Title };
 
-const TITLE_COLUMNS = 'id, kind, name, year, creator';
+const TITLE_COLUMNS = 'id, kind, name, original_name, year, creator, poster_url';
 const RATING_COLUMNS = 'id, title_id, overall, criteria, review, watched_on, created_at, updated_at';
 
 export async function fetchShelf(userId: string): Promise<ShelfItem[]> {
@@ -85,14 +90,59 @@ export async function fetchMyRating(userId: string, titleId: string): Promise<Ra
   return data ? normalizeRating(data as Rating) : null;
 }
 
-export async function createTitle(draft: TitleDraft): Promise<Title> {
-  const { data, error } = await supabase
-    .from('titles')
-    .insert({ ...draft, source: 'manual' })
-    .select(TITLE_COLUMNS)
-    .single();
+export async function createTitle(
+  draft: Omit<Title, 'id'> & { source: TitleSource; external_id?: string | null; description?: string | null },
+): Promise<Title> {
+  const { data, error } = await supabase.from('titles').insert(draft).select(TITLE_COLUMNS).single();
   if (error) throw error;
   return data as Title;
+}
+
+/** The catalog title already saved by anyone in JustRate, if there is one. */
+export async function findCatalogTitle(source: TitleSource, externalId: string): Promise<Title | null> {
+  const { data, error } = await supabase
+    .from('titles')
+    .select(TITLE_COLUMNS)
+    .eq('source', source)
+    .eq('external_id', externalId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as Title | null;
+}
+
+/** Lower-case words of a search, with ё read as е. */
+export function searchWords(value: string): string[] {
+  return value
+    .toLocaleLowerCase('ru')
+    .replace(/ё/g, 'е')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+}
+
+export type SavedTitle = Title & { source: TitleSource; external_id: string | null };
+
+/**
+ * Titles you or your friends have rated whose name, original name or author holds every word.
+ * Titles opened from search but never rated are left out.
+ */
+export async function searchSavedTitles(kind: TitleKind, query: string, limit = 5): Promise<SavedTitle[]> {
+  const queryWords = searchWords(query).slice(0, 5);
+  if (queryWords.length === 0) return [];
+  // "_" matches any one letter, so е also finds ё. Words hold only letters and digits, which are safe here.
+  const clauses = queryWords.map((word) => {
+    const pattern = `*${word.replace(/е/g, '_')}*`;
+    return `or(name.ilike.${pattern},original_name.ilike.${pattern},creator.ilike.${pattern})`;
+  });
+  const { data, error } = await supabase
+    .from('titles')
+    // Only ratings you may see (yours and your groupmates') count.
+    .select(`${TITLE_COLUMNS}, source, external_id, ratings!inner(id)`)
+    .eq('kind', kind)
+    .or(`and(${clauses.join(',')})`)
+    .order('name')
+    .limit(limit);
+  if (error) throw error;
+  return ((data ?? []) as (SavedTitle & { ratings?: unknown })[]).map(({ ratings: _ratings, ...title }) => title);
 }
 
 export type RatingInput = {

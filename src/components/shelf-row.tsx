@@ -11,7 +11,7 @@ export function ShelfRow({ item, onPress }: { item: ShelfItem; onPress: () => vo
       accessibilityRole="button"
       accessibilityLabel={`${item.title.name}, оценка ${formatScore(item.overall)}`}
       className="flex-row items-center gap-3.5 border-b border-outline-100 py-3 active:opacity-70">
-      <Poster id={item.title.id} />
+      <Poster id={item.title.id} url={item.title.poster_url} />
       <View className="min-w-0 flex-1 gap-1">
         <Text className="font-heading-semibold text-[17px] leading-[22px] text-typography-900" numberOfLines={2}>
           {item.title.name}

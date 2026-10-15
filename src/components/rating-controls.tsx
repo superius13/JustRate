@@ -3,7 +3,16 @@ import { Pressable, View } from 'react-native';
 import { colors } from '@/components/colors';
 import { BackIcon, ChevronRightIcon, MinusIcon, PlusIcon } from '@/components/icons';
 import { Text } from '@/components/ui/text';
-import { compareMonths, currentMonth, monthLabel, shiftMonth, type MonthValue } from '@/lib/library';
+import {
+  compareMonths,
+  currentMonth,
+  formatScore,
+  monthLabel,
+  shiftMonth,
+  type MonthValue,
+} from '@/lib/library';
+
+const OVERALL_STEP = 0.5;
 
 function RoundButton({
   label,
@@ -32,7 +41,7 @@ function RoundButton({
   );
 }
 
-/** Big overall score from 1 to 10 with minus and plus buttons. */
+/** Big overall score from 1 to 10 in half-point steps, with minus and plus buttons. */
 export function OverallStepper({
   value,
   onChange,
@@ -48,16 +57,16 @@ export function OverallStepper({
         Общая оценка
       </Text>
       <View className="flex-row items-center gap-5">
-        <RoundButton label="Уменьшить" disabled={value <= 1} onPress={() => onChange(value - 1)}>
+        <RoundButton label="Уменьшить" disabled={value <= 1} onPress={() => onChange(Math.max(1, value - OVERALL_STEP))}>
           <MinusIcon color={colors.ink} />
         </RoundButton>
         <Text
           accessibilityRole="adjustable"
           accessibilityValue={{ min: 1, max: 10, now: value }}
-          className="min-w-[70px] text-center font-heading text-[56px] leading-[64px] text-primary-500">
-          {value}
+          className="min-w-[96px] text-center font-heading text-[56px] leading-[64px] text-primary-500">
+          {formatScore(value)}
         </Text>
-        <RoundButton label="Увеличить" disabled={value >= 10} onPress={() => onChange(value + 1)}>
+        <RoundButton label="Увеличить" disabled={value >= 10} onPress={() => onChange(Math.min(10, value + OVERALL_STEP))}>
           <PlusIcon color={colors.ink} />
         </RoundButton>
       </View>

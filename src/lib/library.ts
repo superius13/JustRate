@@ -35,6 +35,7 @@ export type TitleDraft = Omit<Title, 'id'>;
 export type Rating = {
   id: string;
   title_id: string;
+  /** From 1 to 10 in steps of 0.5. */
   overall: number;
   criteria: Record<string, unknown>;
   review: string | null;
@@ -55,7 +56,12 @@ export async function fetchShelf(userId: string): Promise<ShelfItem[]> {
     .eq('user_id', userId)
     .order('updated_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []) as unknown as ShelfItem[];
+  return ((data ?? []) as unknown as ShelfItem[]).map(normalizeRating);
+}
+
+/** The overall score is a Postgres numeric; make sure it is a plain number. */
+function normalizeRating<T extends Rating>(rating: T): T {
+  return { ...rating, overall: Number(rating.overall) };
 }
 
 export async function fetchTitle(titleId: string): Promise<Title | null> {
@@ -76,7 +82,7 @@ export async function fetchMyRating(userId: string, titleId: string): Promise<Ra
     .eq('title_id', titleId)
     .maybeSingle();
   if (error) throw error;
-  return data as Rating | null;
+  return data ? normalizeRating(data as Rating) : null;
 }
 
 export async function createTitle(draft: TitleDraft): Promise<Title> {

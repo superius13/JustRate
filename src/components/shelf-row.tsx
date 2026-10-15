@@ -2,14 +2,14 @@ import { Pressable, View } from 'react-native';
 
 import { Poster } from '@/components/poster';
 import { Text } from '@/components/ui/text';
-import { titleMeta, type ShelfItem } from '@/lib/library';
+import { formatScore, titleMeta, type ShelfItem } from '@/lib/library';
 
 export function ShelfRow({ item, onPress }: { item: ShelfItem; onPress: () => void }) {
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${item.title.name}, оценка ${item.overall}`}
+      accessibilityLabel={`${item.title.name}, оценка ${formatScore(item.overall)}`}
       className="flex-row items-center gap-3.5 border-b border-outline-100 py-3 active:opacity-70">
       <Poster id={item.title.id} />
       <View className="min-w-0 flex-1 gap-1">
@@ -21,7 +21,7 @@ export function ShelfRow({ item, onPress }: { item: ShelfItem; onPress: () => vo
         </Text>
       </View>
       <View className="h-12 w-12 items-center justify-center rounded-[10px] bg-primary-50">
-        <Text className="font-body-bold text-xl text-primary-500">{item.overall}</Text>
+        <Text className="font-body-bold text-xl text-primary-500">{formatScore(item.overall)}</Text>
       </View>
     </Pressable>
   );

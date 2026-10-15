@@ -121,7 +121,10 @@ export function searchWords(value: string): string[] {
 
 export type SavedTitle = Title & { source: TitleSource; external_id: string | null };
 
-/** Titles anyone in JustRate has already saved whose name, original name or author holds every word. */
+/**
+ * Titles you or your friends have rated whose name, original name or author holds every word.
+ * Titles opened from search but never rated are left out.
+ */
 export async function searchSavedTitles(kind: TitleKind, query: string, limit = 5): Promise<SavedTitle[]> {
   const queryWords = searchWords(query).slice(0, 5);
   if (queryWords.length === 0) return [];
@@ -132,13 +135,14 @@ export async function searchSavedTitles(kind: TitleKind, query: string, limit = 
   });
   const { data, error } = await supabase
     .from('titles')
-    .select(`${TITLE_COLUMNS}, source, external_id`)
+    // Only ratings you may see (yours and your groupmates') count.
+    .select(`${TITLE_COLUMNS}, source, external_id, ratings!inner(id)`)
     .eq('kind', kind)
     .or(`and(${clauses.join(',')})`)
     .order('name')
     .limit(limit);
   if (error) throw error;
-  return (data ?? []) as SavedTitle[];
+  return ((data ?? []) as (SavedTitle & { ratings?: unknown })[]).map(({ ratings: _ratings, ...title }) => title);
 }
 
 export type RatingInput = {

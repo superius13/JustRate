@@ -1,4 +1,4 @@
-/** Turns Supabase auth errors into short Russian messages for the user. */
+/** Turns Supabase auth and database errors into short Russian messages for the user. */
 export function describeAuthError(error: unknown): string {
   const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : null;
   if (typeof code === 'string') {
@@ -18,6 +18,10 @@ export function describeAuthError(error: unknown): string {
         return 'Слишком много попыток. Подожди немного и попробуй снова.';
       case 'email_not_confirmed':
         return 'Почта не подтверждена. В настройках Supabase нужно выключить подтверждение почты.';
+      // Unknown column: the database is missing a newer file from supabase/migrations.
+      case '42703':
+      case 'PGRST204':
+        return 'В базе не хватает новых полей. Нужно выполнить в Supabase свежий файл из supabase/migrations.';
     }
   }
   if (error instanceof Error && /network|fetch/i.test(error.message)) {

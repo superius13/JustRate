@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 
 /** Search results from the `catalog` Edge Function (supabase/functions/catalog). */
 export type CatalogItem = {
-  source: 'kinopoisk' | 'google_books';
+  source: 'kinopoisk' | 'google_books' | 'open_library';
   external_id: string;
   kind: TitleKind;
   name: string;

@@ -22,7 +22,7 @@ export function isTitleKind(value: unknown): value is TitleKind {
   return value === 'movie' || value === 'series' || value === 'cartoon' || value === 'book';
 }
 
-export type TitleSource = 'kinopoisk' | 'google_books' | 'manual';
+export type TitleSource = 'kinopoisk' | 'google_books' | 'open_library' | 'manual';
 
 export type Title = {
   id: string;

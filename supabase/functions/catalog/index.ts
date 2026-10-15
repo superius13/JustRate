@@ -1,5 +1,6 @@
 // JustRate catalog search, run as a Supabase Edge Function so API keys stay in Supabase secrets.
-// Films, series and cartoons come from PoiskKino (formerly kinopoisk.dev), books from Google Books.
+// Films, series and cartoons come from PoiskKino (formerly kinopoisk.dev), books from Google Books,
+// with Open Library as a fallback when Google is down.
 //
 // POST { action: "search_movies", query }  → { results: CatalogItem[] }
 // POST { action: "movie_details", id }     → { creator, description, poster_url }
@@ -11,6 +12,7 @@
 
 const POISKKINO_URL = 'https://api.poiskkino.dev/v1.5';
 const GOOGLE_BOOKS_URL = 'https://www.googleapis.com/books/v1/volumes';
+const OPEN_LIBRARY_URL = 'https://openlibrary.org/search.json';
 const SEARCH_LIMIT = 15;
 // PoiskKino takes some posters from TMDB, which is unreachable from Russia; those are relayed.
 const RELAYED_IMAGE_HOSTS = ['image.tmdb.org'];
@@ -44,7 +46,7 @@ async function relayPoster(raw: string) {
 type Kind = 'movie' | 'series' | 'cartoon' | 'book';
 
 type CatalogItem = {
-  source: 'kinopoisk' | 'google_books';
+  source: 'kinopoisk' | 'google_books' | 'open_library';
   external_id: string;
   kind: Kind;
   name: string;
@@ -187,14 +189,56 @@ function toBook(item: Json): CatalogItem | null {
   };
 }
 
-async function searchBooks(query: string) {
+async function searchGoogleBooks(query: string): Promise<Upstream> {
   const params = new URLSearchParams({ q: query, maxResults: String(SEARCH_LIMIT), printType: 'books' });
   const key = Deno.env.get('GOOGLE_BOOKS_API_KEY');
   if (key) params.set('key', key);
-  const result = await getJson(`${GOOGLE_BOOKS_URL}?${params}`, {});
-  if ('error' in result) return fail(result.error, result.detail);
-  const items: Json[] = Array.isArray(result.data?.items) ? result.data.items : [];
-  return json({ results: items.map(toBook).filter(Boolean) });
+  const url = `${GOOGLE_BOOKS_URL}?${params}`;
+  const first = await getJson(url, {});
+  // Google Books often answers 503 "backendFailed" for a moment; one retry usually gets through.
+  if ('error' in first && first.error === 'upstream') return getJson(url, {});
+  return first;
+}
+
+function toOpenLibraryBook(doc: Json): CatalogItem | null {
+  const name = text(doc?.title);
+  const key = text(doc?.key);
+  if (!name || !key) return null;
+  const authors: string[] = Array.isArray(doc.author_name) ? doc.author_name.filter((a: unknown) => text(a)) : [];
+  return {
+    source: 'open_library',
+    external_id: key.replace(/^\/works\//, ''),
+    kind: 'book',
+    name,
+    original_name: null,
+    year: validYear(doc.first_publish_year),
+    creator: authors.length > 0 ? authors.slice(0, 3).join(', ').slice(0, 200) : null,
+    poster_url: typeof doc.cover_i === 'number' ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg` : null,
+  };
+}
+
+async function searchOpenLibrary(query: string): Promise<Upstream> {
+  const params = new URLSearchParams({
+    q: query,
+    limit: String(SEARCH_LIMIT),
+    fields: 'key,title,author_name,first_publish_year,cover_i',
+  });
+  return getJson(`${OPEN_LIBRARY_URL}?${params}`, { 'User-Agent': 'JustRate (personal book list)' });
+}
+
+async function searchBooks(query: string) {
+  const google = await searchGoogleBooks(query);
+  if (!('error' in google)) {
+    const items: Json[] = Array.isArray(google.data?.items) ? google.data.items : [];
+    return json({ results: items.map(toBook).filter(Boolean) });
+  }
+  // A wrong key needs fixing, so say so; outages and quota fall back to Open Library.
+  if (google.error === 'bad_key') return fail(google.error, google.detail);
+  console.error(`catalog: google books ${google.error}: ${google.detail}; using Open Library`);
+  const openLibrary = await searchOpenLibrary(query);
+  if ('error' in openLibrary) return fail(google.error, google.detail);
+  const docs: Json[] = Array.isArray(openLibrary.data?.docs) ? openLibrary.data.docs : [];
+  return json({ results: docs.map(toOpenLibraryBook).filter(Boolean) });
 }
 
 Deno.serve(async (req) => {

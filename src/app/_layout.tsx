@@ -60,7 +60,9 @@ function RootNavigator() {
         <Stack.Screen name="profile-setup" />
       </Stack.Protected>
       <Stack.Protected guard={signedIn && hasName}>
-        <Stack.Screen name="index" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="add" />
+        <Stack.Screen name="rate/[titleId]" />
       </Stack.Protected>
     </Stack>
   );

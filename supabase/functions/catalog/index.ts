@@ -66,8 +66,10 @@ function json(body: unknown, status = 200) {
   });
 }
 
-function fail(error: CatalogError) {
-  return json({ error }, error === 'bad_request' ? 400 : 502);
+/** `detail` is a short upstream status and message, shown in the app to help find setup mistakes. */
+function fail(error: CatalogError, detail?: string) {
+  if (detail) console.error(`catalog: ${error}: ${detail}`);
+  return json(detail ? { error, detail } : { error }, error === 'bad_request' ? 400 : 502);
 }
 
 function text(value: unknown): string | null {
@@ -79,18 +81,36 @@ function validYear(value: unknown): number | null {
   return typeof year === 'number' && Number.isInteger(year) && year >= 1800 && year <= 2200 ? year : null;
 }
 
-async function getJson(url: string, headers: Record<string, string>): Promise<{ data: Json } | { error: CatalogError }> {
+type Upstream = { data: Json } | { error: CatalogError; detail: string };
+
+async function getJson(url: string, headers: Record<string, string>): Promise<Upstream> {
   let response: Response;
   try {
     response = await fetch(url, { headers: { Accept: 'application/json', ...headers } });
-  } catch {
-    return { error: 'upstream' };
+  } catch (e) {
+    return { error: 'upstream', detail: `network: ${e instanceof Error ? e.message : String(e)}`.slice(0, 200) };
   }
-  if (response.status === 401) return { error: 'bad_key' };
-  // PoiskKino answers 403 when the daily limit is used up; Google answers 429.
-  if (response.status === 403 || response.status === 429) return { error: 'limit' };
-  if (!response.ok) return { error: response.status === 400 ? 'bad_key' : 'upstream' };
-  return { data: await response.json() };
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    let message = body;
+    try {
+      const parsed = JSON.parse(body);
+      message = parsed?.error?.message ?? parsed?.message ?? body;
+    } catch {
+      // Not JSON; keep the raw text.
+    }
+    const detail = `${response.status} ${String(message)}`.replace(/\s+/g, ' ').slice(0, 200);
+    if (response.status === 401) return { error: 'bad_key', detail };
+    // PoiskKino answers 403 when the daily limit is used up; Google answers 429 (and 403 for key problems).
+    if (response.status === 429) return { error: 'limit', detail };
+    if (response.status === 403) return { error: /quota|limit|лимит/i.test(detail) ? 'limit' : 'bad_key', detail };
+    return { error: response.status === 400 ? 'bad_key' : 'upstream', detail };
+  }
+  try {
+    return { data: await response.json() };
+  } catch {
+    return { error: 'upstream', detail: `${response.status} not JSON` };
+  }
 }
 
 // --- Films, series, cartoons ---
@@ -122,7 +142,7 @@ async function searchMovies(query: string) {
   if (!key) return fail('missing_key');
   const params = new URLSearchParams({ page: '1', limit: String(SEARCH_LIMIT), query });
   const result = await getJson(`${POISKKINO_URL}/movie/search?${params}`, { 'X-API-KEY': key });
-  if ('error' in result) return fail(result.error);
+  if ('error' in result) return fail(result.error, result.detail);
   const docs: Json[] = Array.isArray(result.data?.docs) ? result.data.docs : [];
   return json({ results: docs.map(toMovie).filter(Boolean) });
 }
@@ -131,7 +151,7 @@ async function movieDetails(id: number) {
   const key = Deno.env.get('POISKKINO_API_KEY');
   if (!key) return fail('missing_key');
   const result = await getJson(`${POISKKINO_URL}/movie/${id}`, { 'X-API-KEY': key });
-  if ('error' in result) return fail(result.error);
+  if ('error' in result) return fail(result.error, result.detail);
   const persons: Json[] = Array.isArray(result.data?.persons) ? result.data.persons : [];
   const directors = persons
     .filter((p) => p?.enProfession === 'director')
@@ -172,7 +192,7 @@ async function searchBooks(query: string) {
   const key = Deno.env.get('GOOGLE_BOOKS_API_KEY');
   if (key) params.set('key', key);
   const result = await getJson(`${GOOGLE_BOOKS_URL}?${params}`, {});
-  if ('error' in result) return fail(result.error);
+  if ('error' in result) return fail(result.error, result.detail);
   const items: Json[] = Array.isArray(result.data?.items) ? result.data.items : [];
   return json({ results: items.map(toBook).filter(Boolean) });
 }

@@ -20,8 +20,12 @@ export type CatalogShelf = 'video' | 'book';
 type CatalogErrorCode = 'not_deployed' | 'missing_key' | 'bad_key' | 'limit' | 'offline' | 'failed';
 
 export class CatalogError extends Error {
-  constructor(readonly code: CatalogErrorCode) {
-    super(code);
+  constructor(
+    readonly code: CatalogErrorCode,
+    /** Upstream status and message from the function, if it sent one. */
+    readonly detail?: string,
+  ) {
+    super(detail ? `${code}: ${detail}` : code);
   }
 }
 
@@ -35,7 +39,8 @@ const MESSAGES: Record<CatalogErrorCode, string> = {
 };
 
 export function describeCatalogError(error: unknown): string {
-  return error instanceof CatalogError ? MESSAGES[error.code] : MESSAGES.failed;
+  if (!(error instanceof CatalogError)) return MESSAGES.failed;
+  return error.detail ? `${MESSAGES[error.code]}\nОтвет каталога: ${error.detail}` : MESSAGES[error.code];
 }
 
 async function invoke<T>(body: Record<string, unknown>): Promise<T> {
@@ -46,8 +51,9 @@ async function invoke<T>(body: Record<string, unknown>): Promise<T> {
     if (response.status === 404) throw new CatalogError('not_deployed');
     const payload = await response.json().catch(() => null);
     const code = payload?.error;
-    if (code === 'missing_key' || code === 'bad_key' || code === 'limit') throw new CatalogError(code);
-    throw new CatalogError('failed');
+    const detail = typeof payload?.detail === 'string' ? payload.detail : undefined;
+    if (code === 'missing_key' || code === 'bad_key' || code === 'limit') throw new CatalogError(code, detail);
+    throw new CatalogError('failed', detail ?? `HTTP ${response.status}`);
   }
   if (error instanceof FunctionsFetchError || error instanceof FunctionsRelayError) {
     throw new CatalogError('offline');

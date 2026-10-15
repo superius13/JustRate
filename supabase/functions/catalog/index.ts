@@ -2,7 +2,7 @@
 // Films, series and cartoons come from PoiskKino (formerly kinopoisk.dev), books from Google Books.
 //
 // POST { action: "search_movies", query }  → { results: CatalogItem[] }
-// POST { action: "movie_details", id }     → { creator, description }
+// POST { action: "movie_details", id }     → { creator, description, poster_url }
 // POST { action: "search_books", query }   → { results: CatalogItem[] }
 //
 // Secrets: POISKKINO_API_KEY (required for films), GOOGLE_BOOKS_API_KEY (optional; without it
@@ -117,6 +117,8 @@ async function movieDetails(id: number) {
   return json({
     creator: directors.length > 0 ? directors.join(', ').slice(0, 200) : null,
     description: text(result.data?.shortDescription) ?? text(result.data?.description),
+    // Search results often miss the poster of a series; the full card usually has it.
+    poster_url: text(result.data?.poster?.previewUrl) ?? text(result.data?.poster?.url),
   });
 }
 

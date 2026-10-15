@@ -82,15 +82,21 @@ export async function ensureCatalogTitle(item: CatalogItem): Promise<Title> {
 
   let creator = item.creator;
   let description: string | null = null;
+  let posterUrl = item.poster_url;
   if (item.source === 'kinopoisk') {
-    // The search list has no director; one extra request fills it in. Not worth failing over.
+    // The search list has no director and sometimes no poster; one extra request fills them in.
     try {
-      const details = await invoke<{ creator: string | null; description: string | null }>({
+      const details = await invoke<{
+        creator: string | null;
+        description: string | null;
+        poster_url?: string | null;
+      }>({
         action: 'movie_details',
         id: Number(item.external_id),
       });
       creator = details.creator;
       description = details.description;
+      posterUrl = posterUrl ?? details.poster_url ?? null;
     } catch {
       // Keep going without the director.
     }
@@ -103,7 +109,7 @@ export async function ensureCatalogTitle(item: CatalogItem): Promise<Title> {
       original_name: item.original_name,
       year: item.year,
       creator,
-      poster_url: item.poster_url,
+      poster_url: posterUrl,
       source: item.source,
       external_id: item.external_id,
       description,

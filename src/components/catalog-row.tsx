@@ -6,6 +6,13 @@ import { Text } from '@/components/ui/text';
 import type { CatalogItem } from '@/lib/catalog';
 import { KIND_LABELS } from '@/lib/library';
 
+// Books come from several places, so each row says which one.
+const BOOK_SOURCE_LABELS: Partial<Record<CatalogItem['source'], string>> = {
+  saved: 'Уже есть у нас',
+  fantlab: 'Фантлаб',
+  google_books: 'Google',
+};
+
 export function CatalogRow({
   item,
   busy,
@@ -17,7 +24,8 @@ export function CatalogRow({
   disabled: boolean;
   onPress: () => void;
 }) {
-  const meta = [KIND_LABELS[item.kind], item.creator ?? item.original_name, item.year]
+  const source = item.kind === 'book' ? BOOK_SOURCE_LABELS[item.source] : undefined;
+  const meta = [KIND_LABELS[item.kind], item.creator ?? item.original_name, item.year, source]
     .filter(Boolean)
     .join(' · ');
 

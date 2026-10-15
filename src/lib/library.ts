@@ -22,15 +22,20 @@ export function isTitleKind(value: unknown): value is TitleKind {
   return value === 'movie' || value === 'series' || value === 'cartoon' || value === 'book';
 }
 
+export type TitleSource = 'kinopoisk' | 'google_books' | 'manual';
+
 export type Title = {
   id: string;
   kind: TitleKind;
   name: string;
+  original_name: string | null;
   year: number | null;
   creator: string | null;
+  poster_url: string | null;
 };
 
-export type TitleDraft = Omit<Title, 'id'>;
+/** A title typed in by hand on the add screen. */
+export type TitleDraft = Pick<Title, 'kind' | 'name' | 'year' | 'creator'>;
 
 export type Rating = {
   id: string;
@@ -46,7 +51,7 @@ export type Rating = {
 
 export type ShelfItem = Rating & { title: Title };
 
-const TITLE_COLUMNS = 'id, kind, name, year, creator';
+const TITLE_COLUMNS = 'id, kind, name, original_name, year, creator, poster_url';
 const RATING_COLUMNS = 'id, title_id, overall, criteria, review, watched_on, created_at, updated_at';
 
 export async function fetchShelf(userId: string): Promise<ShelfItem[]> {
@@ -85,14 +90,24 @@ export async function fetchMyRating(userId: string, titleId: string): Promise<Ra
   return data ? normalizeRating(data as Rating) : null;
 }
 
-export async function createTitle(draft: TitleDraft): Promise<Title> {
-  const { data, error } = await supabase
-    .from('titles')
-    .insert({ ...draft, source: 'manual' })
-    .select(TITLE_COLUMNS)
-    .single();
+export async function createTitle(
+  draft: Omit<Title, 'id'> & { source: TitleSource; external_id?: string | null; description?: string | null },
+): Promise<Title> {
+  const { data, error } = await supabase.from('titles').insert(draft).select(TITLE_COLUMNS).single();
   if (error) throw error;
   return data as Title;
+}
+
+/** The catalog title already saved by anyone in JustRate, if there is one. */
+export async function findCatalogTitle(source: TitleSource, externalId: string): Promise<Title | null> {
+  const { data, error } = await supabase
+    .from('titles')
+    .select(TITLE_COLUMNS)
+    .eq('source', source)
+    .eq('external_id', externalId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as Title | null;
 }
 
 export type RatingInput = {

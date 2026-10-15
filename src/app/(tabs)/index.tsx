@@ -54,7 +54,9 @@ export default function ShelfScreen() {
     const list = (items ?? []).filter((item) => {
       if (filter !== 'all' && item.title.kind !== filter) return false;
       if (!needle) return true;
-      const haystack = [item.title.name, item.title.creator, item.title.year].join(' ').toLocaleLowerCase('ru');
+      const haystack = [item.title.name, item.title.original_name, item.title.creator, item.title.year]
+        .join(' ')
+        .toLocaleLowerCase('ru');
       return haystack.includes(needle);
     });
     if (sort === 'best') {

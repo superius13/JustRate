@@ -28,7 +28,7 @@ import {
   saveRating,
   titleMeta,
   type MonthValue,
-  type TitleDraft,
+  type Title,
 } from '@/lib/library';
 
 const DEFAULT_OVERALL = 7;
@@ -37,7 +37,7 @@ const MAX_REVIEW_LENGTH = 5000;
 type Params = { titleId: string; kind?: string; name?: string; year?: string; creator?: string };
 
 /** A title that is either already in the database or still a draft from the add screen. */
-type LoadedTitle = TitleDraft & { id: string | null };
+type LoadedTitle = Omit<Title, 'id'> & { id: string | null };
 
 export default function RateScreen() {
   const params = useLocalSearchParams<Params>();
@@ -113,7 +113,7 @@ export default function RateScreen() {
       let titleId = title.id;
       if (titleId === null) {
         const { id: _draftId, ...draft } = title;
-        const created = await createTitle(draft);
+        const created = await createTitle({ ...draft, source: 'manual' });
         titleId = created.id;
         // A retry after a failed rating save must not create the title twice.
         setTitle(created);
@@ -162,7 +162,7 @@ export default function RateScreen() {
         <BackHeader label={isNew ? 'Назад' : 'Полка'} />
 
         <VStack className="items-center gap-2.5">
-          <Poster id={title.id ?? title.name} size="lg" />
+          <Poster id={title.id ?? title.name} url={title.poster_url} size="lg" />
           <Heading size="2xl" className="mt-1.5 text-center leading-8">
             {title.name}
           </Heading>
@@ -240,7 +240,9 @@ function draftFromParams(params: Params): LoadedTitle | null {
     id: null,
     kind: params.kind,
     name,
+    original_name: null,
     year: Number.isInteger(year) && year > 0 ? year : null,
     creator: params.creator?.trim() || null,
+    poster_url: null,
   };
 }

@@ -40,4 +40,12 @@ npx tsc --noEmit   # проверка типов
 3. **Authentication → Sign In / Providers → Email**: выключить **Confirm email**.
 4. Вписать в `.env` адрес проекта и publishable key из **Project Settings → API Keys**.
 
+### Поиск по каталогу
+
+Поиск фильмов и книг идёт через функцию `supabase/functions/catalog`, чтобы ключи не попадали в приложение.
+
+1. Получить ключ ПоискКино (бывший kinopoisk.dev) у Telegram-бота [@poiskkinodev_bot](https://t.me/poiskkinodev_bot).
+2. **Edge Functions → Secrets**: добавить `POISKKINO_API_KEY`. По желанию `GOOGLE_BOOKS_API_KEY`: без него общий бесплатный лимит Google Books часто заканчивается.
+3. **Edge Functions → Deploy a new function → Via Editor**: имя `catalog`, вставить `supabase/functions/catalog/index.ts`, нажать **Deploy**.
+
 Сборка iOS идёт в облаке через EAS Build и TestFlight, Mac не нужен.

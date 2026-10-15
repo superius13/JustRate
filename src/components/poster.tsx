@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { View } from 'react-native';
 
 import { posterColor } from '@/lib/library';
@@ -7,17 +8,33 @@ const SIZES = {
   lg: { width: 132, height: 190, borderRadius: 8 },
 };
 
-/** Coloured placeholder cover until titles get real posters from the catalog. */
-export function Poster({ id, size = 'sm' }: { id: string; size?: keyof typeof SIZES }) {
+/** Cover from the catalog, on top of a coloured block that also stands in when there is no cover. */
+export function Poster({
+  id,
+  url,
+  size = 'sm',
+}: {
+  id: string;
+  url?: string | null;
+  size?: keyof typeof SIZES;
+}) {
+  const box = SIZES[size];
   return (
     <View
       style={[
-        SIZES[size],
-        { backgroundColor: posterColor(id) },
-        size === 'lg' && {
-          boxShadow: '0 8px 24px rgba(60, 45, 25, 0.25)',
-        },
-      ]}
-    />
+        box,
+        { backgroundColor: posterColor(id), overflow: 'hidden' },
+        size === 'lg' && { boxShadow: '0 8px 24px rgba(60, 45, 25, 0.25)' },
+      ]}>
+      {url ? (
+        <Image
+          source={{ uri: url }}
+          style={{ width: box.width, height: box.height }}
+          contentFit="cover"
+          transition={150}
+          cachePolicy="memory-disk"
+        />
+      ) : null}
+    </View>
   );
 }

@@ -1,134 +1,178 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, TextInput, View } from 'react-native';
 
 import { BackHeader } from '@/components/back-header';
+import { CatalogRow } from '@/components/catalog-row';
 import { ChoiceChips } from '@/components/choice-chips';
+import { colors } from '@/components/colors';
+import { SearchIcon } from '@/components/icons';
 import { Screen } from '@/components/screen';
-import { Button, ButtonText } from '@/components/ui/button';
-import {
-  FormControl,
-  FormControlError,
-  FormControlErrorText,
-  FormControlLabel,
-  FormControlLabelText,
-} from '@/components/ui/form-control';
 import { Heading } from '@/components/ui/heading';
-import { Input, InputField } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
 import { VStack } from '@/components/ui/vstack';
-import { KIND_LABELS, type TitleKind } from '@/lib/library';
+import { describeAuthError } from '@/lib/auth-errors';
+import {
+  CatalogError,
+  describeCatalogError,
+  ensureCatalogTitle,
+  searchCatalog,
+  type CatalogItem,
+  type CatalogShelf,
+} from '@/lib/catalog';
 
-const KIND_OPTIONS = (Object.keys(KIND_LABELS) as TitleKind[]).map((value) => ({
-  value,
-  label: KIND_LABELS[value],
-}));
+const SHELF_OPTIONS: { value: CatalogShelf; label: string }[] = [
+  { value: 'video', label: 'Фильмы и сериалы' },
+  { value: 'book', label: 'Книги' },
+];
 
-const CREATOR_LABELS: Record<TitleKind, string> = {
-  movie: 'Режиссёр',
-  series: 'Создатель или режиссёр',
-  cartoon: 'Режиссёр или студия',
-  book: 'Автор',
-};
+const MIN_QUERY_LENGTH = 2;
+// Wait for a pause in typing: the film catalog allows a limited number of requests per day.
+const SEARCH_DELAY_MS = 600;
 
-const MIN_YEAR = 1800;
-const MAX_YEAR = new Date().getFullYear() + 1;
+type SearchState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'done'; results: CatalogItem[] }
+  | { status: 'error'; message: string };
+
+/** The latest answer from the catalog and the search it answers. */
+type Answer = { key: string } & ({ results: CatalogItem[] } | { message: string });
 
 export default function AddTitleScreen() {
-  const [kind, setKind] = useState<TitleKind>('movie');
-  const [name, setName] = useState('');
-  const [year, setYear] = useState('');
-  const [creator, setCreator] = useState('');
+  const [shelf, setShelf] = useState<CatalogShelf>('video');
+  const [query, setQuery] = useState('');
+  const [answer, setAnswer] = useState<Answer | null>(null);
+  const [picking, setPicking] = useState<string | null>(null);
+  const [pickError, setPickError] = useState<string | null>(null);
 
-  const trimmedYear = year.trim();
-  const yearNumber = Number(trimmedYear);
-  const yearInvalid =
-    trimmedYear.length > 0 &&
-    (!/^\d{4}$/.test(trimmedYear) || yearNumber < MIN_YEAR || yearNumber > MAX_YEAR);
-  const canContinue = name.trim().length > 0 && !yearInvalid;
+  const trimmed = query.trim();
+  const searchKey = trimmed.length >= MIN_QUERY_LENGTH ? `${shelf}:${trimmed}` : null;
 
-  function next() {
-    // The title is saved together with the first rating, so backing out leaves nothing behind.
+  useEffect(() => {
+    if (searchKey === null) return;
+    let active = true;
+    const timer = setTimeout(() => {
+      searchCatalog(shelf, trimmed)
+        .then((results) => active && setAnswer({ key: searchKey, results }))
+        .catch((e) => active && setAnswer({ key: searchKey, message: describeCatalogError(e) }));
+    }, SEARCH_DELAY_MS);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [searchKey, shelf, trimmed]);
+
+  const search: SearchState =
+    searchKey === null
+      ? { status: 'idle' }
+      : answer?.key !== searchKey
+        ? { status: 'loading' }
+        : 'results' in answer
+          ? { status: 'done', results: answer.results }
+          : { status: 'error', message: answer.message };
+
+  async function pick(item: CatalogItem) {
+    const key = `${item.source}:${item.external_id}`;
+    setPicking(key);
+    setPickError(null);
+    try {
+      const title = await ensureCatalogTitle(item);
+      router.push(`/rate/${title.id}`);
+    } catch (e) {
+      setPickError(e instanceof CatalogError ? describeCatalogError(e) : describeAuthError(e));
+    } finally {
+      setPicking(null);
+    }
+  }
+
+  function addManually() {
     router.push({
-      pathname: '/rate/[titleId]',
-      params: { titleId: 'new', kind, name: name.trim(), year: trimmedYear, creator: creator.trim() },
+      pathname: '/add-manual',
+      params: { kind: shelf === 'book' ? 'book' : 'movie', name: trimmed },
     });
   }
 
   return (
     <Screen>
-      <VStack className="gap-7">
+      <VStack className="gap-5">
         <BackHeader label="Полка" />
-        <VStack className="gap-2">
-          <Heading size="2xl">Что добавим?</Heading>
-          <Text className="text-typography-700">
-            Пока вручную. Поиск по каталогу с обложками появится позже.
-          </Text>
-        </VStack>
+        <Heading size="2xl">Что добавим?</Heading>
 
-        <VStack className="gap-3">
-          <Text className="font-body-medium text-typography-900">Что это</Text>
-          <ChoiceChips options={KIND_OPTIONS} value={kind} onChange={setKind} />
-        </VStack>
+        <ChoiceChips options={SHELF_OPTIONS} value={shelf} onChange={setShelf} />
 
-        <FormControl isRequired>
-          <FormControlLabel>
-            <FormControlLabelText className="font-body-medium">Название</FormControlLabelText>
-          </FormControlLabel>
-          <Input size="xl" className="rounded-[10px] border-outline-200 bg-background-0">
-            <InputField
-              value={name}
-              onChangeText={setName}
-              placeholder={kind === 'book' ? 'Мастер и Маргарита' : 'Интерстеллар'}
-              maxLength={300}
-              autoFocus
-              className="font-body"
-            />
-          </Input>
-        </FormControl>
+        <View className="h-[46px] flex-row items-center gap-2.5 rounded-[10px] border border-outline-200 bg-background-0 px-3.5">
+          <SearchIcon color={colors.muted} />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder={shelf === 'book' ? 'Название книги или автор' : 'Название фильма или сериала'}
+            placeholderTextColor={colors.muted}
+            accessibilityLabel="Поиск по каталогу"
+            autoFocus
+            returnKeyType="search"
+            className="flex-1 font-body text-[15px] text-typography-900"
+          />
+        </View>
 
-        <FormControl isInvalid={yearInvalid}>
-          <FormControlLabel>
-            <FormControlLabelText className="font-body-medium">Год (необязательно)</FormControlLabelText>
-          </FormControlLabel>
-          <Input size="xl" className="rounded-[10px] border-outline-200 bg-background-0">
-            <InputField
-              value={year}
-              onChangeText={setYear}
-              placeholder={kind === 'book' ? '1967' : '2014'}
-              keyboardType="number-pad"
-              maxLength={4}
-              className="font-body"
-            />
-          </Input>
-          <FormControlError>
-            <FormControlErrorText>
-              Год из четырёх цифр, от {MIN_YEAR} до {MAX_YEAR}.
-            </FormControlErrorText>
-          </FormControlError>
-        </FormControl>
+        {pickError && <Text className="text-error-600">{pickError}</Text>}
 
-        <FormControl>
-          <FormControlLabel>
-            <FormControlLabelText className="font-body-medium">
-              {CREATOR_LABELS[kind]} (необязательно)
-            </FormControlLabelText>
-          </FormControlLabel>
-          <Input size="xl" className="rounded-[10px] border-outline-200 bg-background-0">
-            <InputField
-              value={creator}
-              onChangeText={setCreator}
-              placeholder={kind === 'book' ? 'Михаил Булгаков' : 'Кристофер Нолан'}
-              maxLength={200}
-              autoCapitalize="words"
-              className="font-body"
-            />
-          </Input>
-        </FormControl>
+        <SearchResults state={search} picking={picking} onPick={pick} />
 
-        <Button size="xl" className="h-[52px] rounded-xl" onPress={next} isDisabled={!canContinue}>
-          <ButtonText className="font-body-semibold">Дальше: оценка</ButtonText>
-        </Button>
+        <Pressable
+          onPress={addManually}
+          accessibilityRole="button"
+          className="items-center rounded-[14px] border border-dashed border-outline-300 px-4 py-4 active:opacity-70">
+          <Text className="font-body-semibold text-primary-500">Нет в каталоге? Добавить вручную</Text>
+        </Pressable>
       </VStack>
     </Screen>
+  );
+}
+
+function SearchResults({
+  state,
+  picking,
+  onPick,
+}: {
+  state: SearchState;
+  picking: string | null;
+  onPick: (item: CatalogItem) => void;
+}) {
+  if (state.status === 'idle') {
+    return (
+      <Text className="text-typography-600">
+        Начни вводить название. Обложка и год подтянутся из каталога.
+      </Text>
+    );
+  }
+  if (state.status === 'loading') {
+    return (
+      <View className="items-center py-8">
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+  if (state.status === 'error') {
+    return <Text className="text-typography-700">{state.message}</Text>;
+  }
+  if (state.results.length === 0) {
+    return <Text className="text-typography-700">Ничего не нашлось. Попробуй другое написание.</Text>;
+  }
+  return (
+    <View>
+      {state.results.map((item) => {
+        const key = `${item.source}:${item.external_id}`;
+        return (
+          <CatalogRow
+            key={key}
+            item={item}
+            busy={picking === key}
+            disabled={picking !== null}
+            onPress={() => onPick(item)}
+          />
+        );
+      })}
+    </View>
   );
 }

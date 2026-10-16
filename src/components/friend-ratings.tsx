@@ -55,8 +55,8 @@ function FriendRatingRow({ rating, first }: { rating: FriendRating; first: boole
           <Text className="text-[13px] text-typography-600">Без заметки</Text>
         )}
       </View>
-      <View className="h-10 w-10 items-center justify-center rounded-[8px] bg-primary-50">
-        <Text className="font-body-bold text-base text-primary-500">{formatScore(rating.overall)}</Text>
+      <View className="h-12 w-12 items-center justify-center rounded-[10px] bg-primary-50">
+        <Text className="font-body-bold text-xl text-primary-500">{formatScore(rating.overall)}</Text>
       </View>
     </Pressable>
   );

@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, Platform, View } from 'react-native';
 
 import { BackHeader } from '@/components/back-header';
 import { colors } from '@/components/colors';
+import { FriendRatings } from '@/components/friend-ratings';
 import { Poster } from '@/components/poster';
 import { CriterionBar, MonthPicker, OverallStepper } from '@/components/rating-controls';
 import { Screen } from '@/components/screen';
@@ -15,6 +16,7 @@ import { VStack } from '@/components/ui/vstack';
 import { useAuth } from '@/lib/auth';
 import { describeAuthError } from '@/lib/auth-errors';
 import { averageScore, cleanScores, criteriaFor, type CriteriaScores } from '@/lib/criteria';
+import { fetchFriendRatings, type FriendRating } from '@/lib/friends';
 import {
   createTitle,
   currentMonth,
@@ -47,6 +49,7 @@ export default function RateScreen() {
 
   const [title, setTitle] = useState<LoadedTitle | null>(() => (isNew ? draftFromParams(params) : null));
   const [hasRating, setHasRating] = useState(false);
+  const [friendRatings, setFriendRatings] = useState<FriendRating[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [overall, setOverall] = useState(DEFAULT_OVERALL);
@@ -60,6 +63,10 @@ export default function RateScreen() {
   useEffect(() => {
     if (isNew || !userId) return;
     let active = true;
+    // Friends' ratings are extra: if they fail to load, the screen still works without them.
+    fetchFriendRatings(userId, params.titleId)
+      .then((ratings) => active && setFriendRatings(ratings))
+      .catch(() => {});
     Promise.all([fetchTitle(params.titleId), fetchMyRating(userId, params.titleId)])
       .then(([loaded, rating]) => {
         if (!active) return;
@@ -168,6 +175,8 @@ export default function RateScreen() {
           </Heading>
           <Text className="text-center text-sm text-typography-600">{titleMeta(title)}</Text>
         </VStack>
+
+        {friendRatings.length > 0 && <FriendRatings ratings={friendRatings} />}
 
         <OverallStepper
           value={overall}

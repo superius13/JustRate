@@ -1,9 +1,10 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 
 import { BackHeader } from '@/components/back-header';
 import { colors } from '@/components/colors';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { FriendRatings } from '@/components/friend-ratings';
 import { Poster } from '@/components/poster';
 import { CriterionBar, MonthPicker, OverallStepper } from '@/components/rating-controls';
@@ -58,6 +59,7 @@ export default function RateScreen() {
   const [watched, setWatched] = useState<MonthValue | null>(() => (isNew ? currentMonth() : null));
 
   const [busy, setBusy] = useState<'save' | 'delete' | null>(null);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -139,6 +141,7 @@ export default function RateScreen() {
   }
 
   async function remove() {
+    setConfirmingRemove(false);
     if (!userId || !title?.id) return;
     setBusy('delete');
     setError(null);
@@ -149,18 +152,6 @@ export default function RateScreen() {
       setError(describeAuthError(e));
       setBusy(null);
     }
-  }
-
-  function confirmRemove() {
-    const question = `Убрать «${title?.name}» с полки? Оценка и заметка удалятся.`;
-    if (Platform.OS === 'web') {
-      if (window.confirm(question)) remove();
-      return;
-    }
-    Alert.alert('Убрать с полки?', question, [
-      { text: 'Отмена', style: 'cancel' },
-      { text: 'Убрать', style: 'destructive', onPress: remove },
-    ]);
   }
 
   return (
@@ -230,13 +221,22 @@ export default function RateScreen() {
             <ButtonText className="font-body-semibold">Сохранить</ButtonText>
           </Button>
           {hasRating && (
-            <Button variant="link" onPress={confirmRemove} isDisabled={busy !== null}>
+            <Button variant="link" onPress={() => setConfirmingRemove(true)} isDisabled={busy !== null}>
               {busy === 'delete' && <ButtonSpinner color={colors.muted} />}
               <ButtonText className="font-body-medium text-error-600">Убрать с полки</ButtonText>
             </Button>
           )}
         </VStack>
       </VStack>
+
+      <ConfirmDialog
+        visible={confirmingRemove}
+        title="Убрать с полки?"
+        message={`«${title.name}» пропадёт с твоей полки, оценка и заметка удалятся.`}
+        confirmLabel="Убрать"
+        onConfirm={remove}
+        onCancel={() => setConfirmingRemove(false)}
+      />
     </Screen>
   );
 }

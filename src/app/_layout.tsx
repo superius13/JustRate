@@ -11,6 +11,7 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 
 import { GluestackUIProvider } from '@/components/ui/gluestack-ui-provider';
 import { AuthProvider, useAuth } from '@/lib/auth';
@@ -30,12 +31,14 @@ export default function RootLayout() {
   if (!fontsLoaded && !fontError) return null;
 
   return (
-    <GluestackUIProvider mode="light">
-      <StatusBar style="dark" />
-      <AuthProvider>
-        <RootNavigator />
-      </AuthProvider>
-    </GluestackUIProvider>
+    <KeyboardProvider>
+      <GluestackUIProvider mode="light">
+        <StatusBar style="dark" />
+        <AuthProvider>
+          <RootNavigator />
+        </AuthProvider>
+      </GluestackUIProvider>
+    </KeyboardProvider>
   );
 }
 

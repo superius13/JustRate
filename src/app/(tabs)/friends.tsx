@@ -1,8 +1,9 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, Share, View } from 'react-native';
+import { ActivityIndicator, Share, View } from 'react-native';
 
 import { colors } from '@/components/colors';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { FriendsIcon } from '@/components/icons';
 import { Screen, TAB_EDGES } from '@/components/screen';
 import { Button, ButtonSpinner, ButtonText } from '@/components/ui/button';
@@ -214,6 +215,7 @@ function GroupView({
   onLeft: () => Promise<void>;
 }) {
   const [leaving, setLeaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function share() {
@@ -223,6 +225,7 @@ function GroupView({
   }
 
   async function leave() {
+    setConfirming(false);
     setLeaving(true);
     setError(null);
     try {
@@ -232,18 +235,6 @@ function GroupView({
       setError(describeAuthError(e));
       setLeaving(false);
     }
-  }
-
-  function confirmLeave() {
-    const question = `Выйти из группы «${group.name}»? Ты перестанешь видеть оценки друзей, а они твои. Вернуться можно по коду.`;
-    if (Platform.OS === 'web') {
-      if (window.confirm(question)) leave();
-      return;
-    }
-    Alert.alert('Выйти из группы?', question, [
-      { text: 'Отмена', style: 'cancel' },
-      { text: 'Выйти', style: 'destructive', onPress: leave },
-    ]);
   }
 
   return (
@@ -297,10 +288,19 @@ function GroupView({
 
       {error && <Text className="text-center text-error-600">{error}</Text>}
 
-      <Button variant="link" onPress={confirmLeave} isDisabled={leaving}>
+      <Button variant="link" onPress={() => setConfirming(true)} isDisabled={leaving}>
         {leaving && <ButtonSpinner color={colors.muted} />}
         <ButtonText className="font-body-medium text-error-600">Выйти из группы</ButtonText>
       </Button>
+
+      <ConfirmDialog
+        visible={confirming}
+        title="Выйти из группы?"
+        message={`Ты выйдешь из группы «${group.name}» и перестанешь видеть оценки друзей, а они твои. Вернуться можно по коду.`}
+        confirmLabel="Выйти"
+        onConfirm={leave}
+        onCancel={() => setConfirming(false)}
+      />
     </VStack>
   );
 }

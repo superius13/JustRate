@@ -1,20 +1,20 @@
 {
   "expo": {
-    "name": "justrate",
+    "name": "JustRate",
     "slug": "justrate",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "justrate",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#F5F4EF",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.superius13.justrate"
     },
     "web": {
       "output": "single",
@@ -25,9 +25,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#F5F4EF",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 200
         }
       ],
       "expo-sqlite"
@@ -35,6 +35,24 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "backgroundColor": "#F5F4EF",
+    "ios": {
+      "bundleIdentifier": "com.superius13.justrate",
+      "supportsTablet": false
+    },
+    "owner": "superius",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/57c4697d-c193-45a7-b977-e09c3651e08b"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "57c4697d-c193-45a7-b977-e09c3651e08b"
+      }
     }
   }
 }

@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { useState } from 'react';
 
 import { Screen } from '@/components/screen';
@@ -56,6 +57,11 @@ export default function SignInScreen() {
     <Screen>
       <VStack className="flex-1 justify-center gap-8">
         <VStack className="gap-2">
+          <Image
+            source={require('@/assets/images/splash-icon.png')}
+            style={{ width: 88, height: 88, marginLeft: -12, marginBottom: 4 }}
+            accessibilityIgnoresInvertColors
+          />
           <Text className="text-typography-600">Фильмы, сериалы и книги</Text>
           <Heading size="3xl">JustRate</Heading>
           <Text className="text-typography-700">

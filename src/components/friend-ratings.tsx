@@ -7,7 +7,7 @@ import { VStack } from '@/components/ui/vstack';
 import type { FriendRating } from '@/lib/friends';
 import { formatScore } from '@/lib/library';
 
-const COLLAPSED_REVIEW_LINES = 3;
+const COLLAPSED_REVIEW_LINES = 2;
 
 /** «Оценки друзей»: each groupmate who rated the title, with their overall score and note. */
 export function FriendRatings({ ratings }: { ratings: FriendRating[] }) {
